@@ -9,6 +9,9 @@ const schema = z.object({
   date: z.string().min(1, "Date is required"),
   caller_name: z.string().min(1, "Caller name is required"),
   caller_mobile: z.string().min(3, "Mobile is required"),
+  sex: z.enum(["Male", "Female", "Other"], {
+    required_error: "Sex is required",
+  }),
   precinct_name: z.string().min(1),
   location: z.string().min(1),
   precinct_code: z.string().optional(),
@@ -50,6 +53,7 @@ export default function IncidentForm() {
     resolver: zodResolver(schema),
     defaultValues: {
       date: new Date().toISOString().slice(0, 10),
+      sex: "Male",
       witness_incident_witnessed: false,
       witness_arrived_after: false,
       witness_party_to_incident: false,
@@ -102,11 +106,6 @@ export default function IncidentForm() {
     fontSize: "15px",
     outline: "none",
     transition: "border 0.2s ease-in-out, box-shadow 0.2s ease-in-out",
-  };
-
-  const inputFocusStyle: React.CSSProperties = {
-    borderColor: "#4bb2d6",
-    boxShadow: "0 0 0 3px rgba(48, 186, 236, 0.2)",
   };
 
   const labelStyle: React.CSSProperties = {
@@ -205,11 +204,11 @@ export default function IncidentForm() {
         NEC Call Center Log
       </h1>
 
-      {/* Recorder / Header */}
+      {/* Header Fields */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr",
+          gridTemplateColumns: "1fr 1fr 1fr 1fr",
           gap: "20px",
           marginBottom: "30px",
         }}
@@ -245,6 +244,16 @@ export default function IncidentForm() {
         </label>
 
         <label style={labelStyle}>
+          Sex
+          <select {...register("sex")} style={inputStyle}>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+          {errors.sex && <span style={errorStyle}>{errors.sex.message}</span>}
+        </label>
+
+        <label style={labelStyle}>
           Precinct Name
           <input {...register("precinct_name")} style={inputStyle} />
         </label>
@@ -266,20 +275,12 @@ export default function IncidentForm() {
 
         <label style={labelStyle}>
           Time of Incident
-          <input
-            {...register("time_of_incident")}
-            style={inputStyle}
-            placeholder="e.g., 09:35"
-          />
+          <input {...register("time_of_incident")} style={inputStyle} />
         </label>
 
         <label style={labelStyle}>
           Time of Report
-          <input
-            {...register("time_of_report")}
-            style={inputStyle}
-            placeholder="e.g., 10:05"
-          />
+          <input {...register("time_of_report")} style={inputStyle} />
         </label>
       </div>
 
@@ -343,10 +344,16 @@ export default function IncidentForm() {
         >
           {[
             ["incident_polling_not_open", "Polling place is not open"],
-            ["incident_materials_not_arrived", "Polling materials have not yet arrived"],
+            [
+              "incident_materials_not_arrived",
+              "Polling materials have not yet arrived",
+            ],
             ["incident_missing_on_roll", "People cannot be located on the FRR"],
             ["incident_no_security", "No Security"],
-            ["incident_tension_unrest", "Tension / Unrest / Intimidation / Harassment"],
+            [
+              "incident_tension_unrest",
+              "Tension / Unrest / Intimidation / Harassment",
+            ],
             ["incident_campaigning_at_center", "Campaigning at Center"],
             ["incident_hate_speech_violence", "Hate Speech / Violence"],
             ["incident_overcrowding", "Overcrowding"],

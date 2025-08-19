@@ -10,7 +10,7 @@ const schema = z.object({
   caller_name: z.string().min(1, "Caller name is required"),
   caller_mobile: z.string().min(3, "Mobile is required"),
   sex: z.enum(["Male", "Female", "Other"], {
-    required_error: "Sex is required",
+    message: "Sex is required",
   }),
   precinct_name: z.string().min(1),
   location: z.string().min(1),

@@ -1,41 +1,53 @@
 "use client";
 
-import { useForm, SubmitHandler, Controller } from "react-hook-form";
+import { useForm, SubmitHandler } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useState } from "react";
 
 // ================= Zod Schema =================
-const schema = z.object({
-  date: z.string().min(1, "Date is required"),
-  caller_name: z.string().min(1, "Caller name is required"),
-  caller_mobile: z.string().min(3, "Mobile is required"),
-  sex: z.enum(["Male", "Female", "Other"], {
-    message: "Sex is required",
-  }),
-  precinct_name: z.string().min(1),
-  location: z.string().min(1),
-  precinct_code: z.string().optional(),
-  polling_place_number: z.string().optional(),
-  time_of_incident: z.string().optional(),
-  time_of_report: z.string().optional(),
+const schema = z
+  .object({
+    date: z.string().min(1, "Date is required"),
+    time_of_incident: z.string().optional(),
+    time_of_report: z.string().optional(),
+    caller_name: z.string().min(1, "Caller name is required"),
+    caller_mobile: z.string().regex(/^\+?\d{7,15}$/, "Invalid phone number"),
+    sex: z.enum(["Male", "Female", "Other"], { message: "Sex is required" }),
+    precinct_name: z.string().min(1, "Precinct name required"),
+    location: z.string().min(1, "Location required"),
+    precinct_code: z.string().optional(),
+    polling_place_number: z.string().optional(),
 
-  witness_incident_witnessed: z.boolean(),
-  witness_arrived_after: z.boolean(),
-  witness_party_to_incident: z.boolean(),
-  witness_role: z.string().optional(),
+    witness_choice: z
+      .enum(["incident_witnessed", "arrived_after", "party_to_incident"])
+      .optional(),
+    witness_role: z.string().optional(),
 
-  incident_polling_not_open: z.boolean(),
-  incident_materials_not_arrived: z.boolean(),
-  incident_missing_on_roll: z.boolean(),
-  incident_no_security: z.boolean(),
-  incident_tension_unrest: z.boolean(),
-  incident_campaigning_at_center: z.boolean(),
-  incident_hate_speech_violence: z.boolean(),
-  incident_overcrowding: z.boolean(),
-
-  incident_other: z.string().optional(),
-  resolution: z.string().optional(),
-});
+    incident_choice: z
+      .enum([
+        "polling_not_open",
+        "materials_not_arrived",
+        "missing_on_roll",
+        "no_security",
+        "tension_unrest",
+        "campaigning",
+        "hate_speech",
+        "overcrowding",
+      ])
+      .optional(),
+    incident_other: z.string().optional(),
+    resolution: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.witness_choice && !data.witness_role?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Caller role required if witness selected",
+        path: ["witness_role"],
+      });
+    }
+  });
 
 // ================= TypeScript Type =================
 type FormData = z.infer<typeof schema>;
@@ -45,32 +57,38 @@ export default function IncidentForm() {
   const {
     register,
     handleSubmit,
-    control,
     reset,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: {
       date: new Date().toISOString().slice(0, 10),
       sex: "Male",
-      witness_incident_witnessed: false,
-      witness_arrived_after: false,
-      witness_party_to_incident: false,
-      incident_polling_not_open: false,
-      incident_materials_not_arrived: false,
-      incident_missing_on_roll: false,
-      incident_no_security: false,
-      incident_tension_unrest: false,
-      incident_campaigning_at_center: false,
-      incident_hate_speech_violence: false,
-      incident_overcrowding: false,
     },
   });
 
+  const witnessChoice = watch("witness_choice");
+  const incidentChoice = watch("incident_choice");
+  const [timeRecorded, setTimeRecorded] = useState(false);
+
+  // Auto-record Time of Report when user starts typing
+  useEffect(() => {
+    const subscription = watch((value, { name, type }) => {
+      if (!timeRecorded && name && name !== "time_of_report") {
+        const now = new Date();
+        const timeString = now.toTimeString().slice(0, 5); // HH:MM
+        setValue("time_of_report", timeString);
+        setTimeRecorded(true);
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [watch, setValue, timeRecorded]);
+
   const onSubmit: SubmitHandler<FormData> = async (data) => {
     try {
-      const res = await fetch("/api/incidents", {
+      const res = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -79,6 +97,7 @@ export default function IncidentForm() {
       if (res.ok) {
         alert("Incident submitted ✅");
         reset();
+        setTimeRecorded(false);
       } else {
         const err = await res.json();
         alert("Submit failed: " + err.error);
@@ -89,305 +108,203 @@ export default function IncidentForm() {
     }
   };
 
-  const witnessChecked =
-    watch("witness_incident_witnessed") ||
-    watch("witness_arrived_after") ||
-    watch("witness_party_to_incident");
-
-  // ================= STYLES =================
-  const inputStyle: React.CSSProperties = {
-    padding: "12px",
-    borderRadius: "12px",
-    border: "1px solid #ccc",
-    width: "100%",
-    marginTop: "6px",
-    backgroundColor: "#fff",
-    color: "#111",
-    fontSize: "15px",
-    outline: "none",
-    transition: "border 0.2s ease-in-out, box-shadow 0.2s ease-in-out",
-  };
-
-  const labelStyle: React.CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    marginBottom: "16px",
-    fontSize: "15px",
-    color: "#111",
-  };
-
-  const errorStyle: React.CSSProperties = {
-    color: "#d32f2f",
-    fontSize: "13px",
-    marginTop: "4px",
-  };
-
-  const fieldsetStyle: React.CSSProperties = {
-    border: "1px solid #ccc",
-    borderRadius: "14px",
-    padding: "20px",
-    marginBottom: "25px",
-    backgroundColor: "#f5f5f5",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-  };
-
-  const legendStyle: React.CSSProperties = {
-    padding: "0 10px",
-    fontWeight: 700,
-    fontSize: "16px",
-    color: "#333",
-  };
-
-  const checkboxLabelStyle: React.CSSProperties = {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    fontSize: "14px",
-    marginBottom: "10px",
-    color: "#111",
-    cursor: "pointer",
-    position: "relative",
-  };
-
-  const checkboxStyle: React.CSSProperties = {
-    width: "20px",
-    height: "20px",
-    borderRadius: "6px",
-    border: "2px solid #ccc",
-    accentColor: "#4bb2d6",
-    cursor: "pointer",
-  };
-
-  const buttonStyle: React.CSSProperties = {
-    backgroundColor: "#4bb2d6",
-    color: "#fff",
-    fontWeight: 600,
-    padding: "14px 24px",
-    border: "none",
-    borderRadius: "12px",
-    cursor: isSubmitting ? "not-allowed" : "pointer",
-    fontSize: "16px",
-    marginTop: "16px",
-    width: "100%",
-    transition: "background-color 0.2s ease",
-  };
-
-  const formStyle: React.CSSProperties = {
-    maxWidth: "1100px",
-    margin: "40px auto",
-    padding: "40px",
-    borderRadius: "18px",
-    backgroundColor: "#e0f7ff",
-    boxShadow: "0 8px 28px rgba(0,0,0,0.15)",
-  };
-
   return (
-    <form onSubmit={handleSubmit(onSubmit)} style={formStyle}>
-      {/* NEC Logo */}
-      <div style={{ textAlign: "center", marginBottom: "25px" }}>
+    <form
+      onSubmit={handleSubmit(onSubmit)}
+      className="max-w-4xl mx-auto my-8 p-6 rounded-2xl bg-white shadow-lg border border-gray-200 space-y-6"
+    >
+      {/* Logo */}
+      <div className="text-center">
         <img
-          src="/nec-logo.png"
+          src="/images/nec-logo.png"
           alt="NEC Logo"
-          style={{ height: "90px", objectFit: "contain" }}
+          className="h-16 mx-auto mb-2"
         />
-      </div>
 
-      <h1
-        style={{
-          fontSize: "28px",
-          fontWeight: 700,
-          marginBottom: "30px",
-          textAlign: "center",
-          color: "#111",
-        }}
-      >
-        NEC Call Center Log
-      </h1>
+        <h1 className="text-2xl font-bold text-gray-900">
+          Digital Call Center Log
+        </h1>
+      </div>
 
       {/* Header Fields */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr 1fr 1fr",
-          gap: "20px",
-          marginBottom: "30px",
-        }}
-      >
-        <label style={labelStyle}>
-          Date
-          <input type="date" {...register("date")} style={inputStyle} />
-          {errors.date && <span style={errorStyle}>{errors.date.message}</span>}
-        </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[
+          ["date", "Date", "date"],
+          ["time_of_incident", "Time of Incident", "time"],
+          ["time_of_report", "Time of Report", "time"],
+          ["caller_name", "Caller Name", "text"],
+          ["caller_mobile", "Caller Mobile", "text"],
+        ].map(([field, label, type]) => (
+          <div key={field}>
+            <label className="block text-sm font-medium text-gray-700">
+              {label}
+            </label>
+            <input
+              type={type as string}
+              {...register(field as keyof FormData)}
+              className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-gray-900 focus:ring-2 focus:ring-sky-400"
+            />
+            {errors[field as keyof FormData] && (
+              <p className="text-red-500 text-xs mt-1">
+                {errors[field as keyof FormData]?.message as string}
+              </p>
+            )}
+          </div>
+        ))}
 
-        <label style={labelStyle}>
-          Caller Name
-          <input
-            {...register("caller_name")}
-            style={inputStyle}
-            placeholder="Full name"
-          />
-          {errors.caller_name && (
-            <span style={errorStyle}>{errors.caller_name.message}</span>
-          )}
-        </label>
-
-        <label style={labelStyle}>
-          Caller Mobile
-          <input
-            {...register("caller_mobile")}
-            style={inputStyle}
-            placeholder="+231..."
-          />
-          {errors.caller_mobile && (
-            <span style={errorStyle}>{errors.caller_mobile.message}</span>
-          )}
-        </label>
-
-        <label style={labelStyle}>
-          Sex
-          <select {...register("sex")} style={inputStyle}>
-            <option value="Male">Male</option>
-            <option value="Female">Female</option>
-            <option value="Other">Other</option>
+        {/* Sex */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700">Sex</label>
+          <select
+            {...register("sex")}
+            className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-gray-900 focus:ring-2 focus:ring-sky-400"
+          >
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
           </select>
-          {errors.sex && <span style={errorStyle}>{errors.sex.message}</span>}
-        </label>
-
-        <label style={labelStyle}>
-          Precinct Name
-          <input {...register("precinct_name")} style={inputStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Location of Incident
-          <input {...register("location")} style={inputStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Precinct Code
-          <input {...register("precinct_code")} style={inputStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Polling Place Number
-          <input {...register("polling_place_number")} style={inputStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Time of Incident
-          <input {...register("time_of_incident")} style={inputStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Time of Report
-          <input {...register("time_of_report")} style={inputStyle} />
-        </label>
+        </div>
       </div>
 
-      {/* Witness Fieldset */}
-      <fieldset style={fieldsetStyle}>
-        <legend style={legendStyle}>Witness</legend>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr 1fr",
-            gap: "16px",
-          }}
-        >
-          <label style={checkboxLabelStyle}>
+      {/* Precinct & Location */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[
+          ["precinct_name", "Precinct Name"],
+          ["location", "Location of Incident"],
+          ["precinct_code", "Precinct Code"],
+          ["polling_place_number", "Polling Place Number"],
+        ].map(([field, label]) => (
+          <div key={field}>
+            <label className="block text-sm font-medium text-gray-700">
+              {label}
+            </label>
             <input
-              type="checkbox"
-              {...register("witness_incident_witnessed")}
-              style={checkboxStyle}
+              {...register(field as keyof FormData)}
+              className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-gray-900 focus:ring-2 focus:ring-sky-400"
             />
-            Incident witnessed by Caller
-          </label>
-          <label style={checkboxLabelStyle}>
-            <input
-              type="checkbox"
-              {...register("witness_arrived_after")}
-              style={checkboxStyle}
-            />
-            Caller arrived after incident
-          </label>
-          <label style={checkboxLabelStyle}>
-            <input
-              type="checkbox"
-              {...register("witness_party_to_incident")}
-              style={checkboxStyle}
-            />
-            Caller is party to incident
-          </label>
-        </div>
+            {errors[field as keyof FormData] && (
+              <p className="text-red-500 text-xs mt-1">
+                {errors[field as keyof FormData]?.message as string}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
 
-        {witnessChecked && (
-          <label style={{ ...labelStyle, marginTop: "16px" }}>
-            Caller Role
-            <input
-              {...register("witness_role")}
-              style={inputStyle}
-              placeholder="Poll worker / Supervisor / NEC staff / Voter"
-            />
-          </label>
-        )}
-      </fieldset>
-
-      {/* Type of Incident Fieldset */}
-      <fieldset style={fieldsetStyle}>
-        <legend style={legendStyle}>Type of Incident</legend>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 1fr",
-            gap: "14px",
-          }}
-        >
+      {/* Witness Section */}
+      <fieldset className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+        <legend className="text-lg font-semibold text-gray-900">Witness</legend>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-2">
           {[
-            ["incident_polling_not_open", "Polling place is not open"],
-            [
-              "incident_materials_not_arrived",
-              "Polling materials have not yet arrived",
-            ],
-            ["incident_missing_on_roll", "People cannot be located on the FRR"],
-            ["incident_no_security", "No Security"],
-            [
-              "incident_tension_unrest",
-              "Tension / Unrest / Intimidation / Harassment",
-            ],
-            ["incident_campaigning_at_center", "Campaigning at Center"],
-            ["incident_hate_speech_violence", "Hate Speech / Violence"],
-            ["incident_overcrowding", "Overcrowding"],
-          ].map(([field, labelText]) => (
-            <label key={field} style={checkboxLabelStyle}>
+            ["incident_witnessed", "Incident witnessed by Caller"],
+            ["arrived_after", "Caller arrived after incident"],
+            ["party_to_incident", "Caller is party to incident"],
+          ].map(([val, label]) => (
+            <label
+              key={val}
+              className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition
+                ${
+                  witnessChoice === val
+                    ? "bg-sky-100 border-sky-400"
+                    : "bg-white border-gray-300"
+                }
+                hover:bg-sky-50`}
+            >
               <input
-                type="checkbox"
-                {...register(field as keyof FormData)}
-                style={checkboxStyle}
+                type="radio"
+                value={val}
+                {...register("witness_choice")}
+                className="accent-sky-500"
               />
-              {labelText}
+              <span className="text-gray-900 font-medium">{label}</span>
             </label>
           ))}
         </div>
 
-        <label style={{ ...labelStyle, marginTop: "16px" }}>
-          Others (please explain)
+        {witnessChoice && (
+          <div className="mt-3">
+            <label className="block text-sm font-medium text-gray-900 mb-1">
+              Caller Role
+            </label>
+            <input
+              {...register("witness_role")}
+              placeholder="Poll worker / Supervisor / NEC staff / Voter"
+              className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-gray-900 focus:ring-2 focus:ring-sky-400"
+            />
+            {errors.witness_role && (
+              <p className="text-red-500 text-xs mt-1">
+                {errors.witness_role.message}
+              </p>
+            )}
+          </div>
+        )}
+      </fieldset>
+
+      {/* Incident Section */}
+      <fieldset className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+        <legend className="text-lg font-semibold text-gray-900">
+          Type of Incident
+        </legend>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+          {[
+            ["polling_not_open", "Polling place is not open"],
+            ["materials_not_arrived", "Polling materials have not arrived"],
+            ["missing_on_roll", "People cannot be located on the FRR"],
+            ["no_security", "No Security"],
+            ["tension_unrest", "Tension / Unrest / Intimidation"],
+            ["campaigning", "Campaigning at Center"],
+            ["hate_speech", "Hate Speech / Violence"],
+            ["overcrowding", "Overcrowding"],
+          ].map(([val, label]) => (
+            <label
+              key={val}
+              className={`flex items-center gap-2 p-2 border rounded-lg cursor-pointer transition
+                ${
+                  incidentChoice === val
+                    ? "bg-sky-100 border-sky-400"
+                    : "bg-white border-gray-300"
+                }
+                hover:bg-sky-50`}
+            >
+              <input
+                type="radio"
+                value={val}
+                {...register("incident_choice")}
+                className="accent-sky-500"
+              />
+              <span className="text-gray-900 font-medium">{label}</span>
+            </label>
+          ))}
+        </div>
+
+        <div className="mt-2">
+          <label className="block text-sm font-medium text-gray-700">
+            Others (please explain)
+          </label>
           <textarea
             {...register("incident_other")}
-            style={{ ...inputStyle, minHeight: "100px" }}
+            className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-gray-900 focus:ring-2 focus:ring-sky-400 min-h-[80px]"
           />
-        </label>
+        </div>
       </fieldset>
 
       {/* Resolution */}
-      <label style={labelStyle}>
-        How was the situation resolved?
+      <div>
+        <label className="block text-sm font-medium text-gray-700">
+          How was the situation resolved?
+        </label>
         <textarea
           {...register("resolution")}
-          style={{ ...inputStyle, minHeight: "120px" }}
+          className="mt-1 w-full rounded-lg border border-gray-300 p-2 text-gray-900 focus:ring-2 focus:ring-sky-400 min-h-[100px]"
         />
-      </label>
+      </div>
 
-      <button type="submit" style={buttonStyle} disabled={isSubmitting}>
+      {/* Submit Button */}
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-full py-3 rounded-lg font-semibold text-white bg-sky-500 hover:bg-sky-600 transition disabled:opacity-60"
+      >
         {isSubmitting ? "Submitting..." : "Submit Report"}
       </button>
     </form>

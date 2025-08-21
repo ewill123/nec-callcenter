@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { supabaseClient } from "@/lib/supabaseClient";
 import { format } from "date-fns";
-import { FiFolder, FiPrinter, FiX } from "react-icons/fi";
+import { FiFolder, FiX, FiDownload } from "react-icons/fi";
+import { FaMale, FaFemale } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
+import { CSVLink } from "react-csv"; // npm i react-csv
+import { Tooltip } from "react-tooltip"; // npm i react-tooltip
 
 type Incident = {
   id: string;
@@ -13,7 +16,7 @@ type Incident = {
   time_of_report?: string;
   caller_name: string;
   caller_mobile: string;
-  sex: string;
+  sex: "male" | "female";
   precinct_name: string;
   location: string;
   precinct_code?: string;
@@ -24,16 +27,17 @@ type Incident = {
   incident_other?: string;
   resolution?: string;
   status?: "pending" | "resolved";
+  issue_group?: "Security" | "Technical" | "Other";
 };
 
 export default function MySubmissions() {
   const [submissions, setSubmissions] = useState<Incident[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
-  const [selectedSubmission, setSelectedSubmission] = useState<Incident | null>(
-    null
-  );
+  const [selectedSubmission, setSelectedSubmission] = useState<Incident | null>(null);
   const [resolutionText, setResolutionText] = useState("");
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 12;
 
   useEffect(() => {
     fetchSubmissions();
@@ -55,136 +59,26 @@ export default function MySubmissions() {
     }
   };
 
-  const groupedByDate = submissions.reduce(
-    (acc: Record<string, Incident[]>, curr) => {
-      const dateKey = format(new Date(curr.date), "yyyy-MM-dd");
-      if (!acc[dateKey]) acc[dateKey] = [];
-      acc[dateKey].push(curr);
-      return acc;
-    },
-    {}
-  );
+  // Pagination
+  const paginatedSubmissions = useMemo(() => {
+    const start = (page - 1) * itemsPerPage;
+    return submissions.slice(start, start + itemsPerPage);
+  }, [submissions, page]);
+
+  const groupedByDate = paginatedSubmissions.reduce((acc: Record<string, Incident[]>, curr) => {
+    const dateKey = format(new Date(curr.date), "yyyy-MM-dd");
+    if (!acc[dateKey]) acc[dateKey] = [];
+    acc[dateKey].push(curr);
+    return acc;
+  }, {});
 
   const toggleDate = (date: string) =>
     setExpandedDate(expandedDate === date ? null : date);
 
-  // ------------------ PRINT FUNCTIONS ------------------
-
-  const printStyles = `
-    @page { size: A4; margin: 15mm; }
-    body { font-family: Arial, sans-serif; font-size: 12px; color: #111; line-height: 1.5; }
-    h1 { text-align: center; font-size: 22px; margin-bottom: 10px; }
-    h2 { font-size: 16px; margin-top: 12px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
-    .section { margin-bottom: 12px; page-break-inside: avoid; }
-    .field { margin-bottom: 6px; }
-    .label { font-weight: bold; display: inline-block; width: 160px; }
-    .report { page-break-after: always; }
-  `;
-
-  const handlePrint = (submission: Incident) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    let html = `<html><head><title>Incident Report</title><style>${printStyles}</style></head><body>`;
-    html += `<h1>NEC Incident Report</h1>`;
-
-    [
-      {
-        title: "General Information",
-        keys: [
-          "date",
-          "time_of_incident",
-          "time_of_report",
-          "caller_name",
-          "caller_mobile",
-          "sex",
-        ],
-      },
-      {
-        title: "Location",
-        keys: [
-          "precinct_name",
-          "precinct_code",
-          "polling_place_number",
-          "location",
-        ],
-      },
-      { title: "Witness", keys: ["witness_choice", "witness_role"] },
-      {
-        title: "Incident Details",
-        keys: ["incident_choice", "incident_other", "resolution"],
-      },
-    ].forEach((section) => {
-      html += `<div class="section"><h2>${section.title}</h2>`;
-      section.keys.forEach((key) => {
-        html += `<div class="field"><span class="label">${key
-          .replace(/_/g, " ")
-          .toUpperCase()}:</span> ${
-          submission[key as keyof Incident] || "-"
-        }</div>`;
-      });
-      html += `</div>`;
-    });
-
-    html += "</body></html>";
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.print();
+  const formatIssue = (text?: string) => {
+    if (!text) return "Unknown Problem";
+    return text.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
   };
-
-  const handlePowerPrint = (reports: Incident[]) => {
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
-
-    let html = `<html><head><title>Incident Reports</title><style>${printStyles}</style></head><body><h1>NEC Incident Reports</h1>`;
-
-    reports.forEach((sub) => {
-      html += `<div class="report">`;
-      [
-        {
-          title: "General Information",
-          keys: [
-            "date",
-            "time_of_incident",
-            "time_of_report",
-            "caller_name",
-            "caller_mobile",
-            "sex",
-          ],
-        },
-        {
-          title: "Location",
-          keys: [
-            "precinct_name",
-            "precinct_code",
-            "polling_place_number",
-            "location",
-          ],
-        },
-        { title: "Witness", keys: ["witness_choice", "witness_role"] },
-        {
-          title: "Incident Details",
-          keys: ["incident_choice", "incident_other", "resolution"],
-        },
-      ].forEach((section) => {
-        html += `<div class="section"><h2>${section.title}</h2>`;
-        section.keys.forEach((key) => {
-          html += `<div class="field"><span class="label">${key
-            .replace(/_/g, " ")
-            .toUpperCase()}:</span> ${sub[key as keyof Incident] || "-"}</div>`;
-        });
-        html += `</div>`;
-      });
-      html += `</div>`;
-    });
-
-    html += "</body></html>";
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.print();
-  };
-
-  // ------------------ SAVE RESOLUTION ------------------
 
   const handleSaveResolution = async () => {
     if (!selectedSubmission || !resolutionText)
@@ -207,11 +101,20 @@ export default function MySubmissions() {
     }
   };
 
-  // ------------------ RENDER ------------------
-
   return (
-    <div className="max-w-7xl mx-auto my-10 p-4">
-      <h1 className="text-4xl font-bold mb-6 text-gray-900">My Submissions</h1>
+    <div className="max-w-screen-xl mx-auto my-12 p-6">
+      <h1 className="text-5xl font-extrabold mb-8 text-gray-900">My Submissions</h1>
+
+      {/* Export CSV */}
+      <div className="flex mb-6">
+        <CSVLink
+          data={submissions}
+          filename={"incident_reports.csv"}
+          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-2"
+        >
+          <FiDownload /> Export CSV
+        </CSVLink>
+      </div>
 
       {loading ? (
         <p className="text-gray-600 text-lg">Loading...</p>
@@ -219,26 +122,23 @@ export default function MySubmissions() {
         <p className="text-gray-600 text-lg">No submissions found.</p>
       ) : (
         <>
-          {/* Folder View */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Folder Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <AnimatePresence>
               {Object.entries(groupedByDate).map(([date, reports]) => (
                 <motion.div
                   key={date}
-                  className="bg-blue-100 shadow-md rounded-lg cursor-pointer hover:shadow-2xl transition p-6 flex flex-col items-center justify-center"
+                  className="bg-blue-50 shadow-lg rounded-lg cursor-pointer hover:shadow-2xl transition p-6 flex flex-col items-center justify-center relative"
                   onClick={() => toggleDate(date)}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 20 }}
                   whileHover={{ scale: 1.03 }}
                 >
-                  <FiFolder className="text-blue-600 w-14 h-14 mb-3" />
-                  <h2 className="font-bold text-lg text-gray-900">
-                    {format(new Date(date), "dd MMM yyyy")}
-                  </h2>
-                  <span className="text-gray-700 font-medium mt-1">
-                    {reports.length} reports
-                  </span>
+                  <FiFolder className="text-blue-600 w-16 h-16 mb-3" />
+                  <h2 className="font-bold text-xl text-gray-900">{format(new Date(date), "dd MMM yyyy")}</h2>
+                  <span className="text-gray-700 font-medium mt-1">{reports.length} reports</span>
+                  <span className="absolute top-2 right-2 text-sm text-gray-500">{reports.filter(r => r.status === "pending").length} pending</span>
                 </motion.div>
               ))}
             </AnimatePresence>
@@ -246,69 +146,88 @@ export default function MySubmissions() {
 
           {/* Expanded Date View */}
           {expandedDate && !selectedSubmission && (
-            <div className="fixed inset-0 bg-gray-50 z-50 overflow-auto p-8">
+            <div className="fixed inset-0 bg-gray-50 z-50 overflow-auto p-10">
               <button
                 onClick={() => setExpandedDate(null)}
                 className="absolute top-6 right-6 text-gray-700 hover:text-gray-900 text-xl flex items-center gap-2"
               >
-                <FiX size={24} /> Close
-              </button>
-              <button
-                onClick={() => handlePowerPrint(groupedByDate[expandedDate])}
-                className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 flex items-center gap-2"
-              >
-                <FiPrinter size={18} /> Print All
+                <FiX size={28} /> Close
               </button>
 
-              <h2 className="text-3xl font-bold mb-6 text-gray-900">
-                {format(new Date(expandedDate), "dd MMM yyyy")} -{" "}
-                {groupedByDate[expandedDate].length} reports
+              <h2 className="text-4xl font-bold mb-6 text-gray-900">
+                {format(new Date(expandedDate), "dd MMM yyyy")} - {groupedByDate[expandedDate].length} reports
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                 <AnimatePresence>
-                  {groupedByDate[expandedDate].map((sub) => (
+                  {groupedByDate[expandedDate].map(sub => (
                     <motion.div
                       key={sub.id}
-                      className="p-5 border rounded-lg shadow hover:shadow-lg cursor-pointer transition bg-white flex flex-col items-center justify-center"
+                      className={`p-4 rounded-lg shadow-lg cursor-pointer relative flex flex-col items-center justify-center ${
+                        sub.sex === "male" ? "bg-blue-100" : "bg-pink-100"
+                      } border-l-4 ${
+                        sub.issue_group === "Security" ? "border-red-500" :
+                        sub.issue_group === "Technical" ? "border-yellow-500" :
+                        "border-gray-400"
+                      }`}
                       onClick={() => setSelectedSubmission(sub)}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 20 }}
-                      whileHover={{ scale: 1.05 }}
+                      whileHover={{ scale: 1.04, boxShadow: "0px 10px 20px rgba(0,0,0,0.2)" }}
+                      data-tooltip-id={`tooltip-${sub.id}`}
+                      data-tooltip-content={`${formatIssue(sub.incident_choice || sub.incident_other)} | ${sub.precinct_name}`}
                     >
-                      <div className="w-32 h-32 bg-blue-200 rounded-lg flex items-center justify-center mb-3 text-center">
-                        <p className="font-semibold text-gray-900">
-                          {sub.caller_name}
-                        </p>
+                      <div className="w-24 h-24 rounded-full flex items-center justify-center mb-3 text-center bg-white shadow">
+                        {sub.sex === "male" ? <FaMale className="text-blue-600 w-10 h-10" /> : <FaFemale className="text-pink-600 w-10 h-10" />}
                       </div>
-                      <p className="text-gray-700 text-sm text-center">
-                        {sub.incident_choice || "Other"}
-                      </p>
-                      {sub.status === "pending" && (
+                      <p className="font-bold text-gray-900 text-center text-base">{sub.caller_name}</p>
+                      <p className="font-semibold text-gray-700 mt-1 text-center text-sm">{formatIssue(sub.incident_choice || sub.incident_other)}</p>
+                      <span className={`absolute top-2 left-2 px-2 py-1 text-xs rounded font-semibold ${
+                        sub.status === "pending" ? "bg-yellow-400 text-gray-800" : "bg-green-500 text-white"
+                      }`}>{sub.status?.toUpperCase()}</span>
+
+                      {sub.status && sub.status === "pending" && (
                         <button
-                          className="mt-2 px-3 py-1 bg-sky-500 text-white rounded hover:bg-sky-600 text-sm"
+                          className="mt-3 px-3 py-1 bg-sky-500 text-white rounded hover:bg-sky-600 text-sm"
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedSubmission(sub);
                             setResolutionText(sub.resolution || "");
                           }}
                         >
-                          Add Resolution
+                          Quick Resolve
                         </button>
                       )}
+
+                      <Tooltip id={`tooltip-${sub.id}`} place="top" />
                     </motion.div>
                   ))}
                 </AnimatePresence>
               </div>
+
+              {/* Pagination */}
+              {submissions.length > itemsPerPage && (
+                <div className="flex justify-center mt-6 gap-4">
+                  {Array.from({ length: Math.ceil(submissions.length / itemsPerPage) }, (_, i) => (
+                    <button
+                      key={i}
+                      className={`px-3 py-1 rounded ${page === i+1 ? "bg-blue-600 text-white" : "bg-gray-200"}`}
+                      onClick={() => setPage(i+1)}
+                    >
+                      {i+1}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Selected Submission View */}
+          {/* Selected Submission Modal */}
           <AnimatePresence>
             {selectedSubmission && (
               <motion.div
-                className="fixed inset-0 bg-gray-50 z-50 overflow-auto p-8 flex flex-col items-center"
+                className="fixed inset-0 bg-gray-50 z-50 overflow-auto p-10 flex flex-col items-center"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -317,59 +236,23 @@ export default function MySubmissions() {
                   onClick={() => setSelectedSubmission(null)}
                   className="absolute top-6 right-6 text-gray-700 hover:text-gray-900 text-xl flex items-center gap-2"
                 >
-                  <FiX size={24} /> Close
-                </button>
-                <button
-                  onClick={() => handlePrint(selectedSubmission)}
-                  className="absolute top-6 left-6 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center gap-2"
-                >
-                  <FiPrinter size={18} /> Print
+                  <FiX size={28} /> Close
                 </button>
 
-                <h1 className="text-3xl font-bold text-center mb-6 text-gray-900">
-                  NEC Incident Report
-                </h1>
+                <h1 className="text-4xl font-bold text-center mb-8 text-gray-900">NEC Incident Report</h1>
 
-                <div className="space-y-6 max-w-3xl w-full text-gray-900">
+                <div className="space-y-6 max-w-5xl w-full text-gray-900">
                   {[
-                    {
-                      title: "General Information",
-                      keys: [
-                        "date",
-                        "time_of_incident",
-                        "time_of_report",
-                        "caller_name",
-                        "caller_mobile",
-                        "sex",
-                      ],
-                    },
-                    {
-                      title: "Location",
-                      keys: [
-                        "precinct_name",
-                        "precinct_code",
-                        "polling_place_number",
-                        "location",
-                      ],
-                    },
-                    {
-                      title: "Witness",
-                      keys: ["witness_choice", "witness_role"],
-                    },
-                    {
-                      title: "Incident Details",
-                      keys: ["incident_choice", "incident_other", "resolution"],
-                    },
+                    { title: "General Information", keys: ["date","time_of_incident","time_of_report","caller_name","caller_mobile","sex"] },
+                    { title: "Location", keys: ["precinct_name","precinct_code","polling_place_number","location"] },
+                    { title: "Witness", keys: ["witness_choice","witness_role"] },
+                    { title: "Incident Details", keys: ["incident_choice","incident_other","resolution"] },
                   ].map((section, idx) => (
-                    <div key={idx} className="border p-5 rounded-lg shadow-sm">
-                      <h2 className="font-bold text-xl mb-2 border-b pb-1">
-                        {section.title}
-                      </h2>
-                      {section.keys.map((key) => (
-                        <p key={key}>
-                          <span className="font-semibold">
-                            {key.replace(/_/g, " ").toUpperCase()}:
-                          </span>{" "}
+                    <div key={idx} className="border p-6 rounded-lg shadow-sm">
+                      <h2 className="font-bold text-2xl mb-3 border-b pb-2">{section.title}</h2>
+                      {section.keys.map(key => (
+                        <p key={key} className="text-sm">
+                          <span className="font-semibold">{key.replace(/_/g," ").toUpperCase()}:</span>{" "}
                           {selectedSubmission[key as keyof Incident] || "-"}
                         </p>
                       ))}
@@ -382,11 +265,11 @@ export default function MySubmissions() {
                         value={resolutionText}
                         onChange={(e) => setResolutionText(e.target.value)}
                         placeholder="Enter resolution here..."
-                        className="w-full border rounded p-3 focus:ring-2 focus:ring-sky-400"
+                        className="w-full border rounded p-4 focus:ring-2 focus:ring-sky-400 text-sm"
                       />
                       <button
                         onClick={handleSaveResolution}
-                        className="mt-3 px-6 py-2 bg-sky-500 text-white rounded hover:bg-sky-600"
+                        className="mt-4 px-6 py-3 bg-sky-500 text-white rounded hover:bg-sky-600 text-sm font-semibold"
                       >
                         Save Resolution
                       </button>
